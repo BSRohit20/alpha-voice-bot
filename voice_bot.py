@@ -275,26 +275,6 @@ def stop_recording_and_process(chat_history, temperature, voice_speed, max_token
         chat_history.append(("🎤 Voice Recording", f"⚠️ Error: {str(e)}"))
         return chat_history, "", "🎤 Ready to record", gr.update(visible=True), gr.update(visible=False)
 
-def record_audio_thread():
-    """Background thread for recording audio"""
-    global recorded_audio, recording_active
-    recognizer = sr.Recognizer()
-    try:
-        with sr.Microphone() as source:
-            print("🎤 Background recording started...")
-            recognizer.adjust_for_ambient_noise(source, duration=0.5)
-            while recording_active:
-                try:
-                    audio = recognizer.listen(source, timeout=0.5, phrase_time_limit=None)
-                    recorded_audio = audio
-                    break
-                except sr.WaitTimeoutError:
-                    if not recording_active:
-                        break
-                    continue
-    except Exception as e:
-        print(f"Recording thread error: {e}")
-
 def record_microphone_simple():
     """Simple microphone recording that starts immediately"""
     recognizer = sr.Recognizer()
@@ -313,14 +293,6 @@ def record_microphone_simple():
         return "No speech detected"
     except Exception as e:
         return f"Recording error: {e}"
-
-def start_recording():
-    """Start recording - redirects to audio upload"""
-    return "Please use the 'Upload Audio File' feature for voice input.", gr.update(visible=True), gr.update(visible=False)
-
-def stop_recording_and_process(chat_history, temperature, voice_speed, max_tokens):
-    """Stop recording - redirects to audio upload"""
-    return chat_history, "", "Please use the 'Upload Audio File' feature for voice input.", gr.update(visible=True), gr.update(visible=False)
 
 def handle_audio_input(audio_file, chat_history, temperature, voice_speed, max_tokens):
     """Handle audio file input by transcribing and processing"""
