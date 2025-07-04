@@ -6,14 +6,8 @@ import threading
 import warnings
 import os
 import time
-
-# Try to import speech recognition and handle missing pyaudio gracefully
-try:
-    import speech_recognition as sr
-    SPEECH_RECOGNITION_AVAILABLE = True
-except ImportError:
-    SPEECH_RECOGNITION_AVAILABLE = False
-    print("⚠️ Speech recognition not available - microphone features will be disabled")
+import speech_recognition as sr
+import pyaudio
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -139,9 +133,6 @@ def speak_text(text, speed=1.0):
 
 def transcribe_audio(file_path):
     """Transcribe audio file to text using Google Speech Recognition"""
-    if not SPEECH_RECOGNITION_AVAILABLE:
-        return "Speech recognition not available in this deployment"
-    
     recognizer = sr.Recognizer()
     try:
         with sr.AudioFile(file_path) as source:
@@ -154,9 +145,6 @@ def transcribe_audio(file_path):
 
 def record_microphone():
     """Record audio from microphone with stop control"""
-    if not SPEECH_RECOGNITION_AVAILABLE:
-        return "Microphone recording not available in this deployment"
-    
     recognizer = sr.Recognizer()
     try:
         with sr.Microphone() as source:
@@ -180,9 +168,6 @@ recording_thread = None
 
 def record_audio_thread():
     """Background thread for recording audio"""
-    if not SPEECH_RECOGNITION_AVAILABLE:
-        return
-    
     global recorded_audio, recording_active
     recognizer = sr.Recognizer()
     try:
@@ -203,9 +188,6 @@ def record_audio_thread():
 
 def record_microphone_simple():
     """Simple microphone recording that starts immediately"""
-    if not SPEECH_RECOGNITION_AVAILABLE:
-        return "Microphone recording not available in this deployment"
-    
     recognizer = sr.Recognizer()
     try:
         with sr.Microphone() as source:
