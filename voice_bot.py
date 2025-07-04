@@ -15,22 +15,14 @@ warnings.filterwarnings("ignore")
 os.environ['GRADIO_ANALYTICS_ENABLED'] = 'False'
 
 # 🔐 OpenRouter API Key and model  
-# ⚠️ IMPORTANT: Set your OpenRouter API key as environment variable
-# Get your key from: https://openrouter.ai/keys
-API_KEY = os.getenv("OPENROUTER_API_KEY", "YOUR_OPENROUTER_API_KEY_HERE")
+API_KEY = "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"
 MODEL = "deepseek/deepseek-chat-v3-0324:free"
 
 def query_openrouter(messages, temperature=0.7, max_tokens=1024):
     """Query the OpenRouter API with the given messages"""
-    # Check if API key is set
-    if API_KEY == "YOUR_OPENROUTER_API_KEY_HERE" or not API_KEY:
-        return demo_response(messages[-1]["content"])
-    
     headers = {
         "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://localhost:7872",
-        "X-Title": "Alpha Voice Bot"
+        "Content-Type": "application/json"
     }
     data = {
         "model": MODEL,
@@ -40,30 +32,15 @@ def query_openrouter(messages, temperature=0.7, max_tokens=1024):
         "stream": False
     }
     try:
-        print(f"🔄 Sending request to OpenRouter...")
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers, 
-            data=json.dumps(data),
-            timeout=30  # Add timeout
-        )
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions",
+                                headers=headers, data=json.dumps(data))
         response.raise_for_status()
         result = response.json()
-        print(f"✅ Got response from OpenRouter")
         return result["choices"][0]["message"]["content"]
-    except requests.exceptions.ConnectionError:
-        return "⚠️ Connection error: Unable to connect to OpenRouter. Please check your internet connection."
-    except requests.exceptions.Timeout:
-        return "⚠️ Timeout error: Request took too long. Please try again."
-    except requests.exceptions.HTTPError as e:
-        if response.status_code == 401:
-            return "⚠️ Authentication error: Invalid API key. Please check your OpenRouter API key."
-        elif response.status_code == 429:
-            return "⚠️ Rate limit exceeded: Too many requests. Please wait and try again."
-        else:
-            return f"⚠️ HTTP error {response.status_code}: {str(e)}"
+    except requests.exceptions.RequestException as e:
+        return f"⚠️ API connection error: {str(e)}. Please check your internet connection."
     except Exception as e:
-        return f"⚠️ OpenRouter error: {str(e)}"
+        return f"⚠️ Unexpected error: {str(e)}"
 
 def demo_response(user_input):
     """Provide demo responses when API key is not configured"""
@@ -95,6 +72,7 @@ def demo_response(user_input):
         "time": "I don't have access to the current time, but I hope you're having a good day!",
         "how old are you": "I'm a digital AI, so I don't age like humans do. But I'm here to help!",
         "where are you from": "I exist in the digital realm, but I'm happy to chat with you from anywhere!",
+        "who is the prime minister": "I'd need access to current political information to tell you who the current Prime Minister is. This depends on which country you're asking about!",
     }
     
     # Check for keyword matches
