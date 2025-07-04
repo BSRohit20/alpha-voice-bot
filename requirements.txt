@@ -1,6 +1,6 @@
 gradio>=4.0.0
-requests>=2.31.0
+requests>=2.25.0
 pyttsx3>=2.90
 SpeechRecognition>=3.10.0
-pydub>=0.25.1
-pyaudio>=0.2.11
+# Note: pyaudio removed for cloud deployment - microphone features will be disabled
+# For local development, install pyaudio separately: pip install pyaudio
