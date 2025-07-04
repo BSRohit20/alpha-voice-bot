@@ -602,9 +602,10 @@ if __name__ == "__main__":
     demo = create_interface()
     demo.launch(
         share=False,  # Disable share to avoid HuggingFace warnings
-        inbrowser=True,
+        inbrowser=False,  # Don't open browser in production
         show_error=True,
-        server_port=None,  # Let Gradio find an available port automatically
+        server_name="0.0.0.0",  # Allow external connections
+        server_port=int(os.getenv("PORT", 7860)),  # Use Railway's PORT or default
         quiet=False,  # Show URL and output
         favicon_path=None  # Disable favicon to reduce 404 errors
     )
