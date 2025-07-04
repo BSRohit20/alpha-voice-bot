@@ -124,13 +124,17 @@ def demo_response(user_input):
 
 def speak_text(text, speed=1.0):
     """Convert text to speech using pyttsx3 with adjustable speed"""
-    try:
-        engine = pyttsx3.init()
-        engine.setProperty('rate', int(200 * speed))  # Adjust speech rate
-        engine.say(text)
-        engine.runAndWait()
-    except Exception as e:
-        print(f"Speech synthesis error: {e}")
+    def tts_thread():
+        try:
+            engine = pyttsx3.init()
+            engine.setProperty('rate', int(200 * speed))  # Adjust speech rate
+            engine.say(text)
+            engine.runAndWait()
+        except Exception as e:
+            print(f"Speech synthesis error: {e}")
+    
+    # Run TTS in background thread to avoid blocking
+    threading.Thread(target=tts_thread, daemon=True).start()
 
 def transcribe_audio(file_path):
     """Transcribe audio file to text using Google Speech Recognition"""
@@ -335,28 +339,25 @@ def handle_audio_input(audio_file, chat_history, temperature, voice_speed, max_t
         return chat_history, ""
 
 def handle_input(user_input, chat_history, temperature, voice_speed, max_tokens):
-    """Handle text input and generate response with enhanced parameters"""
+    """Handle text input and generate response"""
     if not user_input:
         return chat_history, ""
 
-    # Build conversation history
-    messages = [{"role": "system", "content": "You are Alpha Voice Assistant, a helpful and intelligent AI. Keep responses conversational and engaging. You can help with questions, tasks, creative writing, problem-solving, and casual conversation."}]
+    # Build conversation history  
+    messages = [{"role": "system", "content": "You are Alpha Voice Assistant, a helpful and intelligent AI assistant."}]
     for user_msg, assistant_msg in chat_history:
         messages.append({"role": "user", "content": user_msg})
         messages.append({"role": "assistant", "content": assistant_msg})
     messages.append({"role": "user", "content": user_input})
 
-    # Get AI response with custom parameters
+    # Get AI response
     reply = query_openrouter(messages, temperature, max_tokens)
     
-    # If the reply indicates a connection error, fallback to demo mode
-    if "Connection error" in reply or "Timeout error" in reply or "HTTP error" in reply:
-        reply = "⚠️ " + reply + "\n\n🔄 Switching to offline mode...\n\n" + demo_response(user_input)
-    
+    # Add to chat history
     chat_history.append((user_input, reply))
     
-    # Speak the response in a separate thread with custom speed
-    threading.Thread(target=speak_text, args=(reply, voice_speed), daemon=True).start()
+    # Speak the response in background thread
+    speak_text(reply, voice_speed)
     
     return chat_history, ""
 
@@ -366,14 +367,14 @@ def handle_audio(audio_file, chat_history, temperature, voice_speed, max_tokens)
         return chat_history, ""
     
     try:
-        text = transcribe_audio(audio_file)
-        if text and text not in ["Could not understand audio", "Listening timeout"]:
-            return handle_input(text, chat_history, temperature, voice_speed, max_tokens)
+        transcribed = transcribe_audio(audio_file)
+        if transcribed and not transcribed.startswith("Could not") and not transcribed.startswith("Speech recognition error"):
+            return handle_input(transcribed, chat_history, temperature, voice_speed, max_tokens)
         else:
-            chat_history.append(("🎙️ Audio input", f"⚠️ {text}"))
+            chat_history.append(("🎙️ Audio Input", f"⚠️ {transcribed}"))
             return chat_history, ""
     except Exception as e:
-        chat_history.append(("🎙️ Audio input failed", f"⚠️ Error: {e}"))
+        chat_history.append(("🎙️ Audio Input", f"⚠️ Transcription error: {str(e)}"))
         return chat_history, ""
 
 def handle_microphone(chat_history, temperature, voice_speed, max_tokens):
