@@ -8,6 +8,7 @@ import warnings
 import os
 import time
 import speech_recognition as sr
+import pyaudio
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -165,17 +166,110 @@ def handle_audio_input(audio_file, chat_history, temperature, voice_speed, max_t
         return chat_history, ""
 
 def record_microphone():
-    """Record audio from microphone - use Gradio's audio input instead"""
-    return "Please use the 'Upload Audio File' feature above or Gradio's built-in microphone recording."
+    """Record audio from microphone with stop control"""
+    recognizer = sr.Recognizer()
+    try:
+        with sr.Microphone() as source:
+            print("🎤 Recording... Speak now!")
+            recognizer.adjust_for_ambient_noise(source, duration=0.5)
+            # Record with a reasonable timeout
+            audio = recognizer.listen(source, timeout=2, phrase_time_limit=10)
+        print("🔄 Processing speech...")
+        return recognizer.recognize_google(audio)
+    except sr.UnknownValueError:
+        return "Could not understand audio"
+    except sr.RequestError as e:
+        return f"Speech recognition error: {e}"
+    except sr.WaitTimeoutError:
+        return "No speech detected - please try again"
 
 def quick_record():
-    """Quick voice recording - use Gradio's audio input instead"""
-    return "Please use the 'Upload Audio File' feature above for voice input."
+    """Quick voice recording with shorter timeout"""
+    recognizer = sr.Recognizer()
+    try:
+        with sr.Microphone() as source:
+            print("⚡ Quick recording... Speak now!")
+            recognizer.adjust_for_ambient_noise(source, duration=0.2)
+            audio = recognizer.listen(source, timeout=1, phrase_time_limit=5)
+        print("🔄 Processing speech...")
+        return recognizer.recognize_google(audio)
+    except sr.UnknownValueError:
+        return "Could not understand audio"
+    except sr.RequestError as e:
+        return f"Speech recognition error: {e}"
+    except sr.WaitTimeoutError:
+        return "No speech detected"
+    except Exception as e:
+        return f"Recording error: {e}"
 
 # Global variables for recording
 recording_active = False
 recorded_audio = None
 recording_thread = None
+
+def record_audio_thread():
+    """Background thread for recording audio"""
+    global recorded_audio, recording_active
+    recognizer = sr.Recognizer()
+    try:
+        with sr.Microphone() as source:
+            print("🎤 Background recording started...")
+            recognizer.adjust_for_ambient_noise(source, duration=0.5)
+            while recording_active:
+                try:
+                    audio = recognizer.listen(source, timeout=0.5, phrase_time_limit=None)
+                    recorded_audio = audio
+                    break
+                except sr.WaitTimeoutError:
+                    continue
+    except Exception as e:
+        print(f"Recording thread error: {e}")
+        recorded_audio = None
+
+def start_recording():
+    """Start recording audio in background"""
+    global recording_active, recorded_audio, recording_thread
+    recording_active = True
+    recorded_audio = None
+    
+    # Start recording in background thread
+    recording_thread = threading.Thread(target=record_audio_thread, daemon=True)
+    recording_thread.start()
+    
+    return "🎤 Recording... Speak now!", gr.update(visible=False), gr.update(visible=True)
+
+def stop_recording_and_process(chat_history, temperature, voice_speed, max_tokens):
+    """Stop recording and process the audio"""
+    global recording_active, recorded_audio
+    recording_active = False
+    
+    # Wait a moment for recording to stop
+    time.sleep(0.5)
+    
+    try:
+        if recorded_audio is not None:
+            recognizer = sr.Recognizer()
+            text = recognizer.recognize_google(recorded_audio)
+            print(f"🔄 Recognized: {text}")
+            
+            if text and text.strip():
+                result = handle_input(text, chat_history, temperature, voice_speed, max_tokens)
+                return result[0], result[1], "🎤 Ready to record", gr.update(visible=True), gr.update(visible=False)
+            else:
+                chat_history.append(("🎤 Voice Recording", "⚠️ No speech detected"))
+                return chat_history, "", "🎤 Ready to record", gr.update(visible=True), gr.update(visible=False)
+        else:
+            chat_history.append(("🎤 Voice Recording", "⚠️ No audio recorded"))
+            return chat_history, "", "🎤 Ready to record", gr.update(visible=True), gr.update(visible=False)
+    except sr.UnknownValueError:
+        chat_history.append(("🎤 Voice Recording", "⚠️ Could not understand audio"))
+        return chat_history, "", "🎤 Ready to record", gr.update(visible=True), gr.update(visible=False)
+    except sr.RequestError as e:
+        chat_history.append(("🎤 Voice Recording", f"⚠️ Speech recognition error: {e}"))
+        return chat_history, "", "🎤 Ready to record", gr.update(visible=True), gr.update(visible=False)
+    except Exception as e:
+        chat_history.append(("🎤 Voice Recording", f"⚠️ Error: {str(e)}"))
+        return chat_history, "", "🎤 Ready to record", gr.update(visible=True), gr.update(visible=False)
 
 def record_audio_thread():
     """Background thread for recording audio"""
@@ -431,15 +525,26 @@ def create_interface():
                 with gr.Row():
                     with gr.Column(scale=1):
                         audio_input = gr.Audio(
-                            sources=["upload", "microphone"],
                             type="filepath",
-                            label="🎙️ Audio Input (Upload file or record with microphone)",
+                            label="🎙️ Upload Audio File (WAV, MP3, M4A)",
                             show_label=True
                         )
                     with gr.Column(scale=1):
-                        # Quick actions
+                        # Recording status
+                        recording_status = gr.Textbox(
+                            value="🎤 Ready to record",
+                            show_label=False,
+                            interactive=False,
+                            container=False
+                        )
+                        
+                        # Recording control buttons
                         with gr.Row():
-                            gr.Markdown("💡 **Tip:** Use the microphone button in the audio input above for voice recording!")
+                            start_rec_btn = gr.Button("🎤 Start Recording", scale=1, elem_classes="mic-button", size="sm")
+                            stop_rec_btn = gr.Button("⏹️ Stop Recording", scale=1, variant="stop", size="sm", visible=False)
+                        
+                        # Legacy mic button (for quick recording)
+                        mic_btn = gr.Button("⚡ Quick Voice", scale=1, variant="secondary", size="sm")
             
             with gr.Column(scale=1):
                 gr.Markdown("### ⚙️ Control Panel")
@@ -495,16 +600,30 @@ def create_interface():
             outputs=[chatbot, text_input]
         )
         
+        # Audio processing
         audio_input.change(
             fn=handle_audio,
             inputs=[audio_input, chat_state, temperature, voice_speed, max_tokens],
             outputs=[chatbot, text_input]
         )
         
-        # Audio input processing
-        audio_input.change(
-            fn=handle_audio_input,
-            inputs=[audio_input, chat_state, temperature, voice_speed, max_tokens],
+        # Microphone and recording functionality
+        start_rec_btn.click(
+            fn=start_recording,
+            inputs=[],
+            outputs=[recording_status, start_rec_btn, stop_rec_btn]
+        )
+        
+        stop_rec_btn.click(
+            fn=stop_recording_and_process,
+            inputs=[chat_state, temperature, voice_speed, max_tokens],
+            outputs=[chatbot, text_input, recording_status, start_rec_btn, stop_rec_btn]
+        )
+        
+        # Quick voice button (original functionality)
+        mic_btn.click(
+            fn=handle_microphone,
+            inputs=[chat_state, temperature, voice_speed, max_tokens],
             outputs=[chatbot, text_input]
         )
         
