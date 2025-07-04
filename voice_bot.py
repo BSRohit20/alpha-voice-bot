@@ -1,3 +1,4 @@
+# Import required libraries
 import gradio as gr
 import requests
 import json
@@ -7,7 +8,6 @@ import warnings
 import os
 import time
 import speech_recognition as sr
-import pyaudio
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -143,23 +143,34 @@ def transcribe_audio(file_path):
     except sr.RequestError as e:
         return f"Speech recognition error: {e}"
 
-def record_microphone():
-    """Record audio from microphone with stop control"""
-    recognizer = sr.Recognizer()
+def handle_audio_input(audio_file, chat_history, temperature, voice_speed, max_tokens):
+    """Handle audio input from Gradio's audio component"""
+    if audio_file is None:
+        return chat_history, ""
+    
     try:
-        with sr.Microphone() as source:
-            print("🎤 Recording... Speak now!")
-            recognizer.adjust_for_ambient_noise(source, duration=0.5)
-            # Record with a reasonable timeout
-            audio = recognizer.listen(source, timeout=2, phrase_time_limit=10)
-        print("🔄 Processing speech...")
-        return recognizer.recognize_google(audio)
-    except sr.UnknownValueError:
-        return "Could not understand audio"
-    except sr.RequestError as e:
-        return f"Speech recognition error: {e}"
-    except sr.WaitTimeoutError:
-        return "No speech detected - please try again"
+        # Transcribe the audio file
+        text = transcribe_audio(audio_file)
+        
+        if text and not text.startswith("Could not") and not text.startswith("Speech recognition error"):
+            # Process the transcribed text
+            result = handle_input(text, chat_history, temperature, voice_speed, max_tokens)
+            return result[0], result[1]
+        else:
+            # Add error message to chat
+            chat_history.append(("🎤 Voice Input", f"⚠️ {text}"))
+            return chat_history, ""
+    except Exception as e:
+        chat_history.append(("🎤 Voice Input", f"⚠️ Audio processing error: {str(e)}"))
+        return chat_history, ""
+
+def record_microphone():
+    """Record audio from microphone - use Gradio's audio input instead"""
+    return "Please use the 'Upload Audio File' feature above or Gradio's built-in microphone recording."
+
+def quick_record():
+    """Quick voice recording - use Gradio's audio input instead"""
+    return "Please use the 'Upload Audio File' feature above for voice input."
 
 # Global variables for recording
 recording_active = False
@@ -206,38 +217,12 @@ def record_microphone_simple():
         return f"Recording error: {e}"
 
 def start_recording():
-    """Start recording audio in background"""
-    global recording_active, recorded_audio, recording_thread
-    recording_active = True
-    recorded_audio = None
-    
-    # Start recording in background thread
-    recording_thread = threading.Thread(target=record_audio_thread, daemon=True)
-    recording_thread.start()
-    
-    return "🎤 Recording... Speak now!", gr.update(visible=False), gr.update(visible=True)
+    """Start recording - redirects to audio upload"""
+    return "Please use the 'Upload Audio File' feature for voice input.", gr.update(visible=True), gr.update(visible=False)
 
 def stop_recording_and_process(chat_history, temperature, voice_speed, max_tokens):
-    """Stop recording and process the audio"""
-    global recording_active, recorded_audio
-    recording_active = False
-    
-    # Wait a moment for recording to stop
-    time.sleep(0.5)
-    
-    try:
-        if recorded_audio is not None:
-            recognizer = sr.Recognizer()
-            text = recognizer.recognize_google(recorded_audio)
-            print(f"🔄 Recognized: {text}")
-            
-            if text and text.strip():
-                result = handle_input(text, chat_history, temperature, voice_speed, max_tokens)
-                return result[0], result[1], "🎤 Ready to record", gr.update(visible=True), gr.update(visible=False)
-            else:
-                chat_history.append(("🎤 Voice Recording", "⚠️ No speech detected"))
-                return chat_history, "", "🎤 Ready to record", gr.update(visible=True), gr.update(visible=False)
-        else:
+    """Stop recording - redirects to audio upload"""
+    return chat_history, "", "Please use the 'Upload Audio File' feature for voice input.", gr.update(visible=True), gr.update(visible=False)
             chat_history.append(("🎤 Voice Recording", "⚠️ No audio recorded"))
             return chat_history, "", "🎤 Ready to record", gr.update(visible=True), gr.update(visible=False)
             
@@ -439,26 +424,15 @@ def create_interface():
                 with gr.Row():
                     with gr.Column(scale=1):
                         audio_input = gr.Audio(
+                            sources=["upload", "microphone"],
                             type="filepath",
-                            label="🎙️ Upload Audio File (WAV, MP3, M4A)",
+                            label="🎙️ Audio Input (Upload file or record with microphone)",
                             show_label=True
                         )
                     with gr.Column(scale=1):
-                        # Recording status
-                        recording_status = gr.Textbox(
-                            value="🎤 Ready to record",
-                            show_label=False,
-                            interactive=False,
-                            container=False
-                        )
-                        
-                        # Recording control buttons
+                        # Quick actions
                         with gr.Row():
-                            start_rec_btn = gr.Button("🎤 Start Recording", scale=1, elem_classes="mic-button", size="sm")
-                            stop_rec_btn = gr.Button("⏹️ Stop Recording", scale=1, variant="stop", size="sm", visible=False)
-                        
-                        # Legacy mic button (for quick recording)
-                        mic_btn = gr.Button("⚡ Quick Voice", scale=1, variant="secondary", size="sm")
+                            gr.Markdown("💡 **Tip:** Use the microphone button in the audio input above for voice recording!")
             
             with gr.Column(scale=1):
                 gr.Markdown("### ⚙️ Control Panel")
@@ -520,22 +494,10 @@ def create_interface():
             outputs=[chatbot, text_input]
         )
         
-        # Recording control buttons
-        start_rec_btn.click(
-            fn=start_recording,
-            outputs=[recording_status, start_rec_btn, stop_rec_btn]
-        )
-        
-        stop_rec_btn.click(
-            fn=stop_recording_and_process,
-            inputs=[chat_state, temperature, voice_speed, max_tokens],
-            outputs=[chatbot, text_input, recording_status, start_rec_btn, stop_rec_btn]
-        )
-        
-        # Quick voice button (original functionality)
-        mic_btn.click(
-            fn=handle_microphone,
-            inputs=[chat_state, temperature, voice_speed, max_tokens],
+        # Audio input processing
+        audio_input.change(
+            fn=handle_audio_input,
+            inputs=[audio_input, chat_state, temperature, voice_speed, max_tokens],
             outputs=[chatbot, text_input]
         )
         
