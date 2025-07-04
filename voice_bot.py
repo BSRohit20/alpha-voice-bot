@@ -15,7 +15,7 @@ warnings.filterwarnings("ignore")
 os.environ['GRADIO_ANALYTICS_ENABLED'] = 'False'
 
 # 🔐 OpenRouter API Key and model  
-API_KEY = "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"
+API_KEY = "API_Key"
 MODEL = "deepseek/deepseek-chat-v3-0324:free"
 
 def validate_api_key():
