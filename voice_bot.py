@@ -223,15 +223,22 @@ def start_recording():
 def stop_recording_and_process(chat_history, temperature, voice_speed, max_tokens):
     """Stop recording - redirects to audio upload"""
     return chat_history, "", "Please use the 'Upload Audio File' feature for voice input.", gr.update(visible=True), gr.update(visible=False)
-            chat_history.append(("🎤 Voice Recording", "⚠️ No audio recorded"))
-            return chat_history, "", "🎤 Ready to record", gr.update(visible=True), gr.update(visible=False)
-            
-    except sr.UnknownValueError:
-        chat_history.append(("🎤 Voice Recording", "⚠️ Could not understand audio"))
-        return chat_history, "", "🎤 Ready to record", gr.update(visible=True), gr.update(visible=False)
-    except Exception as e:
-        chat_history.append(("🎤 Recording failed", f"⚠️ Error: {e}"))
-        return chat_history, "", "🎤 Ready to record", gr.update(visible=True), gr.update(visible=False)
+
+def handle_audio_input(audio_file, chat_history, temperature, voice_speed, max_tokens):
+    """Handle audio file input by transcribing and processing"""
+    if audio_file is None:
+        return chat_history, ""
+    
+    # Transcribe the audio file
+    transcription = transcribe_audio(audio_file)
+    
+    if transcription and "error" not in transcription.lower():
+        # Process the transcribed text
+        return handle_input(transcription, chat_history, temperature, voice_speed, max_tokens)
+    else:
+        # Handle transcription error
+        chat_history.append(("🎤 Audio Input", f"⚠️ {transcription}"))
+        return chat_history, ""
 
 def handle_input(user_input, chat_history, temperature, voice_speed, max_tokens):
     """Handle text input and generate response with enhanced parameters"""
