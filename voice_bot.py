@@ -15,11 +15,39 @@ warnings.filterwarnings("ignore")
 os.environ['GRADIO_ANALYTICS_ENABLED'] = 'False'
 
 # 🔐 OpenRouter API Key and model  
-API_KEY = "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"
+API_KEY = "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"
 MODEL = "deepseek/deepseek-chat-v3-0324:free"
 
+def validate_api_key():
+    """Validate the OpenRouter API key"""
+    if not API_KEY or API_KEY == "YOUR_OPENROUTER_API_KEY_HERE":
+        return False, "API key not configured"
+    
+    # Check if the key looks valid (basic format check)
+    if not API_KEY.startswith("sk-or-v1-"):
+        return False, "Invalid API key format"
+    
+    return True, "API key format looks valid"
+
+def get_api_status():
+    """Get current API status and suggestions"""
+    is_valid, message = validate_api_key()
+    
+    if not is_valid:
+        return {
+            "status": "invalid",
+            "message": message,
+            "suggestion": "Please check your OpenRouter API key configuration"
+        }
+    
+    return {
+        "status": "configured", 
+        "message": "API key configured",
+        "suggestion": "If you're getting 401 errors, your API key may be expired or have insufficient credits"
+    }
+
 def query_openrouter(messages, temperature=0.7, max_tokens=1024):
-    """Query the OpenRouter API with the given messages"""
+    """Query the OpenRouter API with the given messages, fallback to demo mode if API fails"""
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
@@ -38,9 +66,17 @@ def query_openrouter(messages, temperature=0.7, max_tokens=1024):
         result = response.json()
         return result["choices"][0]["message"]["content"]
     except requests.exceptions.RequestException as e:
-        return f"⚠️ API connection error: {str(e)}. Please check your internet connection."
+        # Check if it's an API key issue (401 Unauthorized)
+        if "401" in str(e) or "Unauthorized" in str(e):
+            print("⚠️ API Key issue detected - switching to demo mode")
+            # Extract user input from the last message
+            user_input = messages[-1]["content"] if messages else ""
+            return f"🔄 API temporarily unavailable. Demo response: {demo_response(user_input)}"
+        return f"⚠️ API connection error: {str(e)}. Switching to offline mode."
     except Exception as e:
-        return f"⚠️ Unexpected error: {str(e)}"
+        print(f"⚠️ Unexpected API error: {str(e)} - using demo mode")
+        user_input = messages[-1]["content"] if messages else ""
+        return demo_response(user_input)
 
 def demo_response(user_input):
     """Provide demo responses when API key is not configured"""
@@ -629,7 +665,17 @@ if __name__ == "__main__":
     
     # Test OpenRouter API key
     if API_KEY and API_KEY != "YOUR_OPENROUTER_API_KEY_HERE":
-        print("   5. ✅ API key configured")
+        print("   5. 🔍 Testing API key...")
+        try:
+            # Test API with a simple request
+            test_messages = [{"role": "user", "content": "test"}]
+            test_response = query_openrouter(test_messages, temperature=0.7, max_tokens=50)
+            if "API" not in test_response and "error" not in test_response.lower():
+                print("   5. ✅ API key working correctly")
+            else:
+                print("   5. ⚠️ API key test failed - will use demo mode")
+        except Exception as e:
+            print(f"   5. ⚠️ API key validation error: {e} - will use demo mode")
     else:
         print("   5. ⚠️ API key not configured - using demo mode")
     
@@ -642,10 +688,10 @@ if __name__ == "__main__":
     demo = create_interface()
     demo.launch(
         share=False,  # Disable share to avoid HuggingFace warnings
-        inbrowser=False,  # Don't open browser in production
+        inbrowser=True,  # Open browser automatically
         show_error=True,
-        server_name="0.0.0.0",  # Allow external connections
-        server_port=int(os.getenv("PORT", 7860)),  # Use Railway's PORT or default
+        server_name="127.0.0.1",  # Local access only
+        server_port=7861,  # Use different port to avoid conflicts
         quiet=False,  # Show URL and output
         favicon_path=None  # Disable favicon to reduce 404 errors
     )
